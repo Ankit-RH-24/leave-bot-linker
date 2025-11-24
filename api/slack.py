@@ -11,7 +11,13 @@ class handler(BaseHTTPRequestHandler):
         post_data = self.rfile.read(content_length)
         
         # Parse the incoming data
-        data = json.loads(post_data.decode('utf-8'))
+        try:
+            data = json.loads(post_data.decode('utf-8'))
+        except json.JSONDecodeError as e:
+            print(f"JSON decode error: {e}")
+            self.send_response(400)
+            self.end_headers()
+            return
         
         # Handle Slack URL verification challenge
         if 'challenge' in data:
@@ -21,21 +27,32 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({'challenge': data['challenge']}).encode())
             return
         
-        # Handle Slack events
+        # Handle event_callback wrapper (Slack sends events wrapped in this)
         if 'event' in data:
+            # Respond immediately to Slack (within 3 seconds)
+            self.send_response(200)
+            self.end_headers()
+            
             event = data['event']
+            event_type = event.get('type')
             
             # Ignore bot messages to prevent loops
             if event.get('bot_id'):
-                self.send_response(200)
-                self.end_headers()
+                return
+            
+            # Ignore message subtypes (edited, deleted, etc.)
+            if event.get('subtype'):
                 return
             
             # Process the message
-            if event['type'] == 'message' or event['type'] == 'app_mention':
+            if event_type == 'message' or event_type == 'app_mention':
                 message_text = event.get('text', '').lower()
                 user_id = event.get('user')
                 channel = event.get('channel')
+                
+                # Skip if no user or channel
+                if not user_id or not channel:
+                    return
                 
                 # Identify request type
                 request_type = self.identify_request_type(message_text)
@@ -44,9 +61,10 @@ class handler(BaseHTTPRequestHandler):
                     # Send response back to Slack
                     response_message = self.generate_response(request_type, user_id)
                     self.send_slack_message(channel, response_message)
-        
-        self.send_response(200)
-        self.end_headers()
+        else:
+            # Respond to other events (like event_callback wrapper)
+            self.send_response(200)
+            self.end_headers()
     
     def identify_request_type(self, message):
         """
@@ -130,6 +148,9 @@ class handler(BaseHTTPRequestHandler):
         try:
             response = requests.post(url, headers=headers, json=payload)
             response.raise_for_status()
+            result = response.json()
+            if not result.get('ok'):
+                print(f"Slack API error: {result.get('error', 'Unknown error')}")
         except Exception as e:
             print(f"Error sending message to Slack: {e}")
     
