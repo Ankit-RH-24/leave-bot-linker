@@ -1,8 +1,2 @@
-{
-  "functions": {
-    "api/slack.py": {
-      "runtime": "python3.9"
-    }
-  }
-}
+{}
 
