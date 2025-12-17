@@ -44,6 +44,10 @@ class handler(BaseHTTPRequestHandler):
             if event.get('subtype'):
                 return
             
+            # Ignore thread replies (messages that are replies to threads)
+            if event.get('thread_ts'):
+                return
+            
             # Process the message
             if event_type == 'message' or event_type == 'app_mention':
                 message_text = event.get('text', '').lower()
